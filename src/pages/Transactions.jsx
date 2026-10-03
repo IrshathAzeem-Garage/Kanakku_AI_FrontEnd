@@ -11,7 +11,13 @@ import {
   RefreshCw,
   ExternalLink,
   Eye,
-  ArrowUpDown
+  ArrowUpDown,
+  FileText,
+  Download,
+  Send,
+  Mail,
+  CheckCircle2,
+  Clock
 } from 'lucide-react';
 import { recordsApi } from '../services/recordsApi';
 import { API_BASE_URL } from '../services/api';
@@ -29,6 +35,8 @@ export default function Transactions() {
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [filterDate, setFilterDate] = useState('');
   const [error, setError] = useState('');
+  const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [actionFeedback, setActionFeedback] = useState(null);
 
   const loadRecords = useCallback(async () => {
     setIsLoading(true);
@@ -79,6 +87,48 @@ export default function Transactions() {
       alert('Failed to delete record.');
     }
   };
+
+  const handleViewPdf = async (id) => {
+    try {
+      await recordsApi.viewPdfInNewTab(id);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to open PDF report.');
+    }
+  };
+
+  const handleDownloadPdf = async (id, filename) => {
+    try {
+      await recordsApi.downloadPdf(id, filename);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to download PDF report.');
+    }
+  };
+
+  const handleSendEmail = async (id) => {
+    setIsSendingEmail(true);
+    setActionFeedback(null);
+    try {
+      const res = await recordsApi.sendReportEmail(id);
+      if (res.success || res.email_sent) {
+        setActionFeedback({ success: true, message: 'Daily account PDF sent successfully to Gmail.' });
+      } else {
+        setActionFeedback({ success: false, message: 'PDF was generated, but Gmail sending failed. Please check your Gmail SMTP configuration.' });
+      }
+      loadRecordDetail(id);
+      loadRecords();
+    } catch (err) {
+      setActionFeedback({
+        success: false,
+        message: err.response?.data?.detail || 'PDF was generated, but Gmail sending failed. Please check your Gmail SMTP configuration.',
+      });
+    } finally {
+      setIsSendingEmail(false);
+      setTimeout(() => setActionFeedback(null), 5000);
+    }
+  };
+
+  const handleSendGmail = handleSendEmail;
+
 
   return (
     <div className="pb-24 lg:pb-8 space-y-6">
@@ -178,9 +228,31 @@ export default function Transactions() {
                     <span className="font-extrabold text-sm text-white">{formatINR(rec.in_hand_money)}</span>
                   </div>
                 </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-gray-100 text-xs text-gray-500">
+                  <div className="flex items-center gap-1.5">
+                    {rec.whatsapp_status === 'sent' || rec.email_status === 'sent' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <CheckCircle2 className="w-3 h-3" /> Emailed
+                      </span>
+                    ) : rec.whatsapp_status === 'failed' || rec.email_status === 'failed' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                        <AlertCircle className="w-3 h-3" /> Failed
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] text-gray-500 bg-gray-100">
+                        PDF Ready
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-gray-900 font-semibold group-hover:text-emerald-700 flex items-center gap-1">
+                    Details & PDF &rarr;
+                  </span>
+                </div>
               </div>
             ))}
           </div>
+
 
           {/* TABLET / DESKTOP VIEW (>= md): Full Structured Data Table */}
           <div className="hidden md:block bg-white rounded-2xl border border-shop-border overflow-hidden shadow-sm">
@@ -195,6 +267,7 @@ export default function Transactions() {
                     <th className="py-3.5 px-4 text-right">Cash Received</th>
                     <th className="py-3.5 px-4 text-right">Expenses</th>
                     <th className="py-3.5 px-4 text-right font-bold text-gray-950">In-Hand Money</th>
+                    <th className="py-3.5 px-4 text-center">Email</th>
                     <th className="py-3.5 px-4 text-center">Action</th>
                   </tr>
                 </thead>
@@ -225,15 +298,36 @@ export default function Transactions() {
                         {formatINR(rec.in_hand_money)}
                       </td>
                       <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            loadRecordDetail(rec.id);
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-950 hover:text-white rounded-lg transition-all"
-                        >
-                          <Eye className="w-3.5 h-3.5" /> View
-                        </button>
+                        {rec.whatsapp_status === 'sent' || rec.email_status === 'sent' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <CheckCircle2 className="w-3 h-3" /> Sent
+                          </span>
+                        ) : rec.whatsapp_status === 'failed' || rec.email_status === 'failed' ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-700 border border-red-200">
+                            <AlertCircle className="w-3 h-3" /> Failed
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-gray-400">
+                            Not Sent
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="flex items-center justify-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => handleViewPdf(rec.id)}
+                            title="View PDF"
+                            className="p-1.5 text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-all"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => loadRecordDetail(rec.id)}
+                            className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-950 hover:text-white rounded-lg transition-all"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> View
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -354,6 +448,91 @@ export default function Transactions() {
                       </div>
                     ))
                   )}
+                </div>
+              </div>
+
+              {/* PDF & Email Action Center */}
+              <div className="p-4 bg-gradient-to-r from-gray-50 to-slate-50 border border-gray-200 rounded-2xl space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <span className="font-bold text-xs text-gray-900 flex items-center gap-1.5">
+                      <FileText className="w-4 h-4 text-gray-700" />
+                      Official PDF Report & Gmail Delivery
+                    </span>
+                    <span className="text-[11px] text-gray-500 font-mono">
+                      {selectedRecord.pdf_file_name || `Daily_Report_${selectedRecord.record_date}.pdf`}
+                    </span>
+                  </div>
+
+                  {/* Delivery Status Badge */}
+                  <div className="flex items-center gap-1.5">
+                    {selectedRecord.whatsapp_status === 'sent' || selectedRecord.email_status === 'sent' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                        Gmail Sent
+                      </span>
+                    ) : selectedRecord.whatsapp_status === 'failed' || selectedRecord.email_status === 'failed' ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-800 border border-red-200">
+                        <AlertCircle className="w-3 h-3 text-red-600" />
+                        Delivery Failed
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium bg-gray-100 text-gray-700">
+                        Not Sent
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {actionFeedback && (
+                  <div className={`p-2.5 rounded-xl text-xs flex items-center gap-2 ${
+                    actionFeedback.success ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-800 border border-red-200'
+                  }`}>
+                    {actionFeedback.success ? <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 text-red-600 flex-shrink-0" />}
+                    <span>{actionFeedback.message}</span>
+                  </div>
+                )}
+
+                {selectedRecord.whatsapp_error && (selectedRecord.whatsapp_status === 'failed' || selectedRecord.email_status === 'failed') && (
+                  <div className="p-2.5 bg-red-50 border border-red-200 rounded-xl text-[11px] text-red-800 flex items-start gap-2">
+                    <AlertCircle className="w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
+                    <span>{selectedRecord.whatsapp_error}</span>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                  <button
+                    onClick={() => handleViewPdf(selectedRecord.id)}
+                    className="px-3 py-2 bg-white hover:bg-gray-100 text-gray-800 border border-gray-300 font-semibold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    <span>View PDF</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleDownloadPdf(selectedRecord.id, selectedRecord.pdf_file_name)}
+                    className="px-3 py-2 bg-white hover:bg-gray-100 text-gray-800 border border-gray-300 font-semibold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download PDF</span>
+                  </button>
+
+                  <button
+                    disabled={isSendingEmail}
+                    onClick={() => handleSendEmail(selectedRecord.id)}
+                    className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow-sm disabled:opacity-50"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>
+                      {isSendingEmail
+                        ? 'Sending to Gmail...'
+                        : selectedRecord.whatsapp_status === 'sent' || selectedRecord.email_status === 'sent'
+                        ? 'Resend to Gmail'
+                        : selectedRecord.whatsapp_status === 'failed' || selectedRecord.email_status === 'failed'
+                        ? 'Retry via Gmail'
+                        : 'Send to Gmail'}
+                    </span>
+                  </button>
                 </div>
               </div>
 

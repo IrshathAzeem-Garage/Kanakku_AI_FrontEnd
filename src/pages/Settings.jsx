@@ -23,6 +23,7 @@ export default function Settings() {
   // Profile Form State
   const [fullname, setFullname] = useState('');
   const [email, setEmail] = useState('');
+  const [whatsappNumber, setWhatsappNumber] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSuccess, setProfileSuccess] = useState('');
   const [profileError, setProfileError] = useState('');
@@ -45,6 +46,7 @@ export default function Settings() {
     if (user) {
       setFullname(user.fullname || '');
       setEmail(user.email || '');
+      setWhatsappNumber(user.whatsapp_number || '');
     }
   }, [user]);
 
@@ -64,8 +66,12 @@ export default function Settings() {
     setProfileSuccess('');
     setProfileError('');
     try {
-      await updateUserProfile({ fullname, email });
-      setProfileSuccess('Profile updated successfully in PostgreSQL.');
+      await updateUserProfile({
+        fullname,
+        email,
+        whatsapp_number: whatsappNumber,
+      });
+      setProfileSuccess('Profile updated successfully.');
       setTimeout(() => setProfileSuccess(''), 4000);
     } catch (err) {
       console.error('Failed to update profile:', err);
@@ -177,6 +183,33 @@ export default function Settings() {
                   required
                   className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm font-medium text-gray-900 bg-white focus:border-gray-950"
                 />
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-gray-700 font-semibold">
+                    Contact Phone Number
+                  </label>
+                  {whatsappNumber ? (
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      Saved
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-200">
+                      Optional
+                    </span>
+                  )}
+                </div>
+                <input
+                  type="tel"
+                  value={whatsappNumber}
+                  onChange={(e) => setWhatsappNumber(e.target.value)}
+                  placeholder="+919876543210"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm font-medium text-gray-900 bg-white focus:border-gray-950 font-mono"
+                />
+                <p className="text-[11px] text-gray-500 mt-1">
+                  Primary business contact phone number. Daily accounting PDF reports are automatically dispatched directly to the configured Gmail address.
+                </p>
               </div>
 
               <div className="pt-1 flex items-center justify-between text-[11px] text-gray-500">

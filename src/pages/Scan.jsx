@@ -14,7 +14,15 @@ import {
   Info,
   ArrowLeft,
   Save,
-  ZoomIn
+  ZoomIn,
+  FileText,
+  Download,
+  Send,
+  Mail,
+  Check,
+  ExternalLink,
+  CheckCircle2,
+  XCircle
 } from 'lucide-react';
 import { recordsApi } from '../services/recordsApi';
 import { formatINR, formatDate, getTodayISO } from '../utils/formatters';
@@ -45,6 +53,10 @@ export default function Scan() {
   const [uncertainEntries, setUncertainEntries] = useState([]);
   const [warningMessage, setWarningMessage] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+
+  // Delivery & Post-Save State
+  const [saveResult, setSaveResult] = useState(null);
+  const [isRetryingEmail, setIsRetryingEmail] = useState(false);
 
   // Handle image file selection
   const handleFileChange = (e) => {
@@ -241,8 +253,8 @@ export default function Scan() {
         image_hash: savedImageHash,
       };
 
-      await recordsApi.createRecord(payload);
-      navigate('/dashboard');
+      const result = await recordsApi.createRecord(payload);
+      setSaveResult(result);
     } catch (err) {
       console.error('Failed to save record:', err);
       setError(err.response?.data?.detail || 'Failed to save record to database. Please check entries.');
@@ -251,12 +263,192 @@ export default function Scan() {
     }
   };
 
+  const handleRetryEmail = async () => {
+    const recId = saveResult?.record_id || saveResult?.id;
+    if (!recId) return;
+
+    setIsRetryingEmail(true);
+    try {
+      const mailRes = await recordsApi.sendReportEmail(recId);
+      setSaveResult((prev) => ({
+        ...prev,
+        email_sent: mailRes.email_sent || mailRes.success,
+        email_status: mailRes.email_status || (mailRes.success ? 'sent' : 'failed'),
+        whatsapp_sent: mailRes.email_sent || mailRes.success,
+        whatsapp_status: mailRes.email_status || (mailRes.success ? 'sent' : 'failed'),
+        whatsapp_error: mailRes.whatsapp_error || (!mailRes.success ? 'Email delivery failed' : null),
+      }));
+    } catch (err) {
+      setSaveResult((prev) => ({
+        ...prev,
+        email_sent: false,
+        email_status: 'failed',
+        whatsapp_sent: false,
+        whatsapp_status: 'failed',
+        whatsapp_error: 'PDF was generated, but email sending failed. Please try again.',
+      }));
+    } finally {
+      setIsRetryingEmail(false);
+    }
+  };
+
+  const handleRetryWhatsApp = handleRetryEmail;
+
+  const handleResetForNewScan = () => {
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setIsReviewing(false);
+    setSaveResult(null);
+    setError('');
+  };
+
   return (
     <div className="pb-24 lg:pb-8 space-y-6">
       <OfflineBanner />
 
-      {/* Screen 1: Image Upload / Capture */}
-      {!isReviewing ? (
+      {/* Screen 3: Post-Confirmation PDF & WhatsApp Delivery Status */}
+      {saveResult ? (
+        <div className="max-w-2xl mx-auto space-y-6 pt-4 animate-in fade-in-50 duration-300">
+          <div className="bg-white rounded-3xl border border-shop-border p-6 sm:p-8 shadow-sm space-y-6">
+            <div className="text-center space-y-2">
+              <div className="w-14 h-14 bg-emerald-100 text-emerald-700 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+                <CheckCircle2 className="w-8 h-8" />
+              </div>
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-950">
+                Daily Account Confirmed & Saved
+              </h2>
+              <p className="text-xs sm:text-sm text-gray-500">
+                The financial data has been permanently backed up in PostgreSQL as the source of truth.
+              </p>
+            </div>
+
+            {/* Checklist of Flow Steps */}
+            <div className="space-y-3 bg-gray-50 rounded-2xl p-4 sm:p-5 border border-gray-200 text-xs sm:text-sm">
+              {/* Step 1: Database Persistence */}
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Check className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <span className="font-bold text-gray-900 block">Record saved to PostgreSQL</span>
+                  <span className="text-xs text-gray-500">
+                    Record #{saveResult.record_id || saveResult.id} • Date: {recordDate}
+                  </span>
+                </div>
+              </div>
+
+              {/* Step 2: PDF Generation */}
+              <div className="flex items-start gap-3">
+                <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 mt-0.5">
+                  <Check className="w-3.5 h-3.5" />
+                </div>
+                <div>
+                  <span className="font-bold text-gray-900 block">Daily PDF Report Generated</span>
+                  <span className="text-xs text-gray-500 font-mono">
+                    {saveResult.pdf_file_name || 'Daily_Report.pdf'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Step 3: Gmail Email Dispatch */}
+              <div className="flex items-start gap-3">
+                {saveResult.email_sent || saveResult.whatsapp_sent ? (
+                  <>
+                    <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Check className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <span className="font-bold text-emerald-800 block">Daily account PDF sent successfully to email.</span>
+                      <span className="text-xs text-emerald-700">
+                        Delivered with PDF attachment to registered business email.
+                      </span>
+                    </div>
+                  </>
+                ) : (saveResult.email_status === 'not_configured' || saveResult.whatsapp_status === 'not_configured') ? (
+                  <>
+                    <div className="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <Info className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <span className="font-bold text-amber-800 block">Email Delivery Not Configured</span>
+                      <span className="text-xs text-amber-700">
+                        Configure GMAIL_USER, GMAIL_APP_PASSWORD, and REPORT_EMAIL in environment. You can still download the PDF below.
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center flex-shrink-0 mt-0.5">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <span className="font-bold text-red-800 block">PDF was generated, but email sending failed. Please try again.</span>
+                      <span className="text-xs text-red-700 block mt-0.5">
+                        {saveResult.email_error || saveResult.whatsapp_error || 'PDF was generated, but email sending failed. Please try again.'}
+                      </span>
+                      <span className="text-[11px] text-gray-500 mt-1 block">
+                        Your accounting data is completely safe in PostgreSQL and not affected by email delivery status.
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Actions Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => recordsApi.viewPdfInNewTab(saveResult.record_id || saveResult.id)}
+                className="w-full bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-xs sm:text-sm border border-gray-300"
+              >
+                <FileText className="w-4 h-4 text-gray-700" />
+                <span>View PDF Report</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => recordsApi.downloadPdf(saveResult.record_id || saveResult.id, saveResult.pdf_file_name)}
+                className="w-full bg-gray-950 hover:bg-gray-800 text-white font-semibold py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-xs sm:text-sm shadow-sm"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download PDF</span>
+              </button>
+
+              {!(saveResult.email_sent || saveResult.whatsapp_sent) && (
+                <button
+                  type="button"
+                  disabled={isRetryingEmail}
+                  onClick={handleRetryEmail}
+                  className="sm:col-span-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-4 rounded-xl transition-all flex items-center justify-center gap-2 text-xs sm:text-sm shadow-sm disabled:opacity-50"
+                >
+                  <Mail className="w-4 h-4" />
+                  <span>{isRetryingEmail ? 'Sending via Gmail...' : 'Send to Gmail'}</span>
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between border-t border-gray-100 pt-4 text-xs">
+              <button
+                type="button"
+                onClick={handleResetForNewScan}
+                className="text-gray-600 hover:text-gray-900 font-semibold flex items-center gap-1.5"
+              >
+                <Camera className="w-3.5 h-3.5" />
+                <span>Scan Another Paper</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => navigate('/dashboard')}
+                className="text-gray-950 font-bold hover:underline"
+              >
+                Go to Dashboard &rarr;
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : !isReviewing ? (
         <div className="space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-shop-border pb-4">
             <div>
