@@ -1,33 +1,41 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { wakeBackend } from '../services/api';
+import { pingBackendHealth } from '../services/api';
 
 const BackendStatusContext = createContext(null);
 
 export function BackendStatusProvider({ children }) {
   const [isHealthy, setIsHealthy] = useState(true);
   const [isWakingUp, setIsWakingUp] = useState(false);
-  const [wakeAttempt, setWakeAttempt] = useState(0);
+  const [wakeAttempt, setWakeAttempt] = useState(1);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
 
-  const checkHealth = useCallback(async () => {
+  const checkHealth = useCallback(async (force = false) => {
     if (!navigator.onLine) {
       setIsOffline(true);
-      return;
+      return false;
     }
-    await wakeBackend((status) => {
-      if (status.isWakingUp !== undefined) setIsWakingUp(status.isWakingUp);
-      if (status.attempt !== undefined) setWakeAttempt(status.attempt);
-      if (status.isHealthy !== undefined) setIsHealthy(status.isHealthy);
-    });
+    setIsOffline(false);
+
+    try {
+      const ok = await pingBackendHealth(force);
+      if (ok) {
+        setIsHealthy(true);
+        setIsWakingUp(false);
+      }
+      return ok;
+    } catch {
+      // Never crash on wake-up failure
+      return false;
+    }
   }, []);
 
   useEffect(() => {
-    // Initial silent health ping to wake Render
+    // Single lightweight wake-up ping when frontend application loads
     checkHealth();
 
     const handleOnline = () => {
       setIsOffline(false);
-      checkHealth();
+      checkHealth(true);
     };
     const handleOffline = () => setIsOffline(true);
 
@@ -39,6 +47,7 @@ export function BackendStatusProvider({ children }) {
       window.removeEventListener('offline', handleOffline);
     };
   }, [checkHealth]);
+
 
   return (
     <BackendStatusContext.Provider

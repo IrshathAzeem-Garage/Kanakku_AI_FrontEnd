@@ -381,7 +381,7 @@ export default function Settings() {
               className="w-full py-2.5 px-4 bg-gray-50 hover:bg-gray-100 border border-gray-300 rounded-xl text-xs font-semibold text-gray-800 flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 ${isTesting ? 'animate-spin' : ''}`} />
-              <span>{isTesting ? 'Pinging /health endpoint...' : 'Test Backend Connection'}</span>
+              <span>{isTesting ? 'Pinging /api/health endpoint...' : 'Test Backend Connection'}</span>
             </button>
           </div>
 

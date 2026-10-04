@@ -8,7 +8,6 @@ import {
   ReceiptText,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { useBackendStatus } from '../context/BackendStatusContext';
 import { dashboardApi } from '../services/dashboardApi';
 import { recordsApi } from '../services/recordsApi';
 import { formatINR, formatDate, getTodayISO } from '../utils/formatters';
@@ -17,17 +16,12 @@ import { OfflineBanner, WakeUpBanner } from '../components/Banners';
 
 export default function Dashboard() {
   const { user, shop } = useAuth();
-  const { checkHealth } = useBackendStatus();
 
   const [dateFilter, setDateFilter] = useState('today'); // 'today', 'yesterday', 'custom'
   const [selectedDate, setSelectedDate] = useState(getTodayISO());
   const [summaryData, setSummaryData] = useState(null);
   const [recentRecords, setRecentRecords] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    checkHealth();
-  }, [checkHealth]);
 
   const loadDashboardData = useCallback(async () => {
     setIsLoading(true);

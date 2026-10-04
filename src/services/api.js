@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Get base URL with fallback to local development
-const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const rawBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL || 'http://localhost:8000';
 export const API_BASE_URL = rawBaseUrl.replace(/\/+$/, '');
 
 export const api = axios.create({
@@ -39,33 +39,57 @@ api.interceptors.response.use(
   }
 );
 
+// Singleton tracking for Render cold-start wake-up
+let wakeInFlight = null;
+let hasSentInitialPing = false;
+
 /**
- * Render Backend Wake-Up Service
- * Calls GET /health with exponential backoff (e.g., immediate, 2s, 4s, 8s, max 4 attempts)
- * Never creates an infinite retry loop.
+ * Lightweight Render Backend Wake-Up Service
+ * Sends a single lightweight GET request to ${API_BASE_URL}/api/health when the frontend application loads.
+ * - Non-blocking: fails silently without breaking frontend UI.
+ * - Single-shot: runs once per page load (deduplicated across root, login, dashboard).
+ * - No aggressive polling or loops.
  */
-export async function wakeBackend(onStatusChange = null) {
-  const delays = [0, 2000, 4000, 8000];
-  let attempt = 0;
-
-  for (const delay of delays) {
-    attempt++;
-    if (delay > 0) {
-      if (onStatusChange) onStatusChange({ isWakingUp: true, attempt });
-      await new Promise((res) => setTimeout(res, delay));
-    }
-
-    try {
-      const response = await axios.get(`${API_BASE_URL}/health`, { timeout: 6000 });
-      if (response.data && response.data.status === 'ok') {
-        if (onStatusChange) onStatusChange({ isWakingUp: false, isHealthy: true });
-        return true;
-      }
-    } catch (err) {
-      console.warn(`Health check attempt ${attempt} failed (Backend might be waking up).`);
-    }
+export async function pingBackendHealth(force = false) {
+  if (hasSentInitialPing && !force) {
+    return true;
+  }
+  if (wakeInFlight) {
+    return wakeInFlight;
   }
 
-  if (onStatusChange) onStatusChange({ isWakingUp: false, isHealthy: false });
-  return false;
+  wakeInFlight = (async () => {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/health`, {
+        timeout: 15000,
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      if (response.data && response.data.status === 'ok') {
+        hasSentInitialPing = true;
+        return true;
+      }
+      return false;
+    } catch (err) {
+      // Fail silently without breaking the application
+      if (import.meta.env.DEV) {
+        console.warn('Backend /api/health ping (Render waking up):', err.message);
+      }
+      return false;
+    } finally {
+      wakeInFlight = null;
+    }
+  })();
+
+  return wakeInFlight;
 }
+
+/**
+ * Backward compatibility alias for Settings test connection
+ */
+export async function wakeBackend(onStatusChange = null) {
+  if (onStatusChange) onStatusChange({ isWakingUp: true, attempt: 1 });
+  const ok = await pingBackendHealth(true);
+  if (onStatusChange) onStatusChange({ isWakingUp: false, isHealthy: ok });
+  return ok;
+}
+
